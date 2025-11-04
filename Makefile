@@ -14,9 +14,11 @@ OBJS = $(addprefix $(DIR_OBJ)/, $(FILE_OBJ))
 
  
 all: $(NAME)
-	./$<
+	@./$< www.google.com
 
 
+build: $(NAME)
+	
 $(NAME): $(OBJS)
 	$(CC) $< -I$(DIR_INCLUDE) -o $@
 
