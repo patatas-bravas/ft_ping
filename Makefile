@@ -1,6 +1,7 @@
 NAME = ping
 CC = cc
-C_FLAGS = -Wall -Wextra -Werror -g
+CFLAGS = -Wall -Wextra -Werror -O2
+LDFLAGS = -O2
 
 DIR_INCLUDE = include
 
@@ -20,10 +21,10 @@ all: $(NAME)
 build: $(NAME)
 	
 $(NAME): $(OBJS)
-	$(CC) $< -I$(DIR_INCLUDE) -o $@
+	$(CC) $< $(LDFLAGS) -I$(DIR_INCLUDE) -o $@
 
 $(DIR_OBJ)/%.o: $(DIR_SRC)/%.c | $(DIR_OBJ)
-	$(CC) $< -c -o $@
+	$(CC) $< $(CFLAGS) -c -o $@
 
 $(DIR_OBJ):
 	mkdir $@
