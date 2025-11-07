@@ -1,20 +1,19 @@
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
-#include <bits/time.h>
-#include <bits/types/struct_iovec.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
-#define IP_NAME_LEN 16
+#define IP_HEADER_SIZE 20
+#define ICMP_HEADER_SIZE 8
 #define TTL_UNIX_SIZE 64
 
 bool run = true;
@@ -25,9 +24,17 @@ typedef struct {
 
 } icmppkt;
 
+typedef struct {
+  char *hostname;
+  char *ipname;
+  ssize_t bytes_read;
+  uint8_t ttl;
+
+} data_ping;
+
 int init_imcp_socket() {
 
-  int fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
   if (fd < 0) {
     perror("[ERROR][socket]");
     return -1;
@@ -49,7 +56,7 @@ int init_imcp_socket() {
     return -1;
   }
 
-  bool on = true;
+  uint8_t on = 1;
   if (setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &on, sizeof(on)) == -1) {
     perror("[ERROR][setsockopt][IP_RECVTTL]");
     close(fd);
@@ -73,7 +80,7 @@ bool dns_resolver(char *hostname, char *ipname, struct sockaddr_in *dest_addr) {
   *dest_addr = *(struct sockaddr_in *)result->ai_addr;
   freeaddrinfo(result);
 
-  if (inet_ntop(AF_INET, &dest_addr->sin_addr, ipname, IP_NAME_LEN) == NULL) {
+  if (inet_ntop(AF_INET, &dest_addr->sin_addr, ipname, 255) == NULL) {
     perror("[ERROR][inet_ntop]");
     return false;
   }
@@ -115,7 +122,7 @@ bool send_packet(int socket_fd, struct sockaddr_in *dest_addr) {
   return true;
 }
 
-bool recv_packet(int socket_fd) {
+bool recv_packet(int socket_fd, data_ping *data) {
 
   char buffer[1024];
   struct msghdr msg;
@@ -129,37 +136,52 @@ bool recv_packet(int socket_fd) {
   msg.msg_control = control;
   msg.msg_controllen = sizeof(control);
 
-  ssize_t size_read;
-  size_read = recvmsg(socket_fd, &msg, 0);
-  printf("size_read = %ld\n", size_read);
-  if (size_read == -1) {
+  data->bytes_read = recvmsg(socket_fd, &msg, 0);
+  if (data->bytes_read == -1) {
     perror("[ERROR][recvmsg]");
     return false;
   }
 
-  int16_t ttl = -1;
   struct cmsghdr *cmsg;
   for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-    if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVTTL) {
-      ttl = *(int *)CMSG_DATA(cmsg);
-      break;
+    if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL) {
+      data->ttl = *CMSG_DATA(cmsg);
     }
   }
-  printf("ttl = %d\n", ttl);
 
   return true;
 }
 
-bool ping(int socket_fd, struct sockaddr_in *dest_addr) {
+void print_ping_header(data_ping *data) {
 
+  size_t total_size = data->byte_read + IP_HEADER_SIZE;
+  size_t icmp_payload_size = data->byte_read - ICMP_HEADER_SIZE;
+  char *hostname = data->hostname;
+  char *ipname = data->ipname;
+  printf("PING %s (%s) %ld(%ld) bytes of data.\n", hostname, ipname, icmp_payload_size, total_size);
+}
+
+void print_ping_body(data_ping *data)
+{
+  ssize_t bytes_read = data->bytes_read;
+}
+void print_ping_footer(data_ping *data);
+
+bool ping(int socket_fd, struct sockaddr_in *dest_addr, data_ping *data) {
+
+  bool first = true;
   struct timespec start, end;
   while (run) {
     clock_gettime(CLOCK_MONOTONIC, &start);
     if (send_packet(socket_fd, dest_addr) == false)
       return false;
-    if (recv_packet(socket_fd) == false)
+    if (recv_packet(socket_fd, data) == false)
       return false;
     clock_gettime(CLOCK_MONOTONIC, &end);
+    if (first) {
+      print_ping_header(data);
+      first = false;
+    }
     sleep(1);
   }
 
@@ -174,17 +196,17 @@ int main(int argc, char *argv[]) {
   }
 
   char *hostname = argv[argc - 1];
-  char ipname[IP_NAME_LEN];
+  char ipname[255];
   struct sockaddr_in addr_dest;
   if (dns_resolver(hostname, ipname, &addr_dest) == false)
     return 1;
-  printf("ip: %s\nhostname: %s\n", ipname, hostname);
 
   int socket_fd = init_imcp_socket();
   if (socket_fd == -1)
     return 2;
 
-  ping(socket_fd, &addr_dest);
+  data_ping data = {.hostname = hostname, .ipname = ipname};
+  ping(socket_fd, &addr_dest, &data);
 
   close(socket_fd);
 }
