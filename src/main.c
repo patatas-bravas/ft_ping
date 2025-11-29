@@ -24,24 +24,24 @@ int main(int argc, char *argv[]) {
   bytes_read = 0;
   opt.size = ICMP_PAYLOAD_SIZE;
 
-  if (handle_opt(argc, argv) == FATAL_ERR)
+  if (handle_opt(argc, argv) == ERR_FATAL)
     return 1;
 
   struct sockaddr_in addr_dest;
-  if (dns_resolver(&addr_dest) == FATAL_ERR)
+  if (dns_resolver(&addr_dest) == ERR_FATAL)
     return 2;
 
   socket_t fd = init_icmp_socket();
-  if (fd == FATAL_ERR)
+  if (fd == ERR_FATAL)
     return 3;
 
   buffer = malloc(RECV_BUFFER_SIZE);
   if (buffer == NULL) {
     perror("[ERROR][malloc]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
-  if (ft_ping(fd, &addr_dest) == FATAL_ERR) {
+  if (ft_ping(fd, &addr_dest) == ERR_FATAL) {
     free(buffer);
     close(fd);
     return 4;

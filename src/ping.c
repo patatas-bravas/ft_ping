@@ -69,24 +69,24 @@ int8_t handle_opt(int argc, char **argv) {
       opt.count_arg = strtol(optarg, &endptr, 10);
       if (*endptr != '\0') {
         fprintf(stderr, "[ERROR][ft_ping]: invalid value %s\n", optarg);
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       break;
 
     case 't':
       if (strcmp("0", optarg) == 0) {
         fprintf(stderr, "[ERROR][ft_ping]: option value too small: 0\n");
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       opt.ttl = 1;
       opt.ttl_arg = strtol(optarg, &endptr, 10);
       if (*endptr != '\0') {
         fprintf(stderr, "[ERROR][ft_ping]: invalid value %s\n", optarg);
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       if (opt.ttl_arg < 1 || opt.ttl_arg > 255 || errno == ERANGE) {
         fprintf(stderr, "[ERROR][ft_ping]: option value too big: %s\n", optarg);
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       break;
 
@@ -95,7 +95,7 @@ int8_t handle_opt(int argc, char **argv) {
       opt.interval_arg = strtof(optarg, &endptr);
       if (opt.interval_arg < 0.2 || errno == ERANGE || *endptr != '\0') {
         fprintf(stderr, "[ERROR][ft_ping]: option value too small: %s\n", optarg);
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       break;
 
@@ -103,7 +103,7 @@ int8_t handle_opt(int argc, char **argv) {
       opt.size = strtol(optarg, &endptr, 10);
       if (errno == ERANGE || opt.size > 65399 || opt.size < 0) {
         fprintf(stderr, "[ERROR][ft_ping]: option value too big: %s\n", optarg);
-        return FATAL_ERR;
+        return ERR_FATAL;
       }
       break;
     case 'q':
@@ -120,11 +120,11 @@ int8_t handle_opt(int argc, char **argv) {
       printf("-i, --interval=NUMBER      wait NUMBER seconds between sending each packet\n");
       printf("-s, --size=NUMBER          send NUMBER data octets\n");
       printf("-q, --quiet                quiet output\n");
-      return FATAL_ERR;
+      return ERR_FATAL;
 
     default:
       fprintf(stderr, "Try 'ft_ping --help' for more information.\n");
-      return FATAL_ERR;
+      return ERR_FATAL;
     }
   }
 
@@ -134,7 +134,7 @@ int8_t handle_opt(int argc, char **argv) {
   }
   if (remaining_arg != 1) {
     fprintf(stderr, "Try 'ft_ping --help' for more information.\n");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   return 0;
@@ -232,7 +232,7 @@ socket_t init_icmp_socket() {
   socket_t fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
   if (fd < 0) {
     perror("[ERROR][socket]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   uint8_t size_ttl;
@@ -244,7 +244,7 @@ socket_t init_icmp_socket() {
   if (setsockopt(fd, IPPROTO_IP, IP_TTL, &size_ttl, sizeof(size_ttl)) == -1) {
     perror("[ERROR][setsockopt][IP_TTL]");
     close(fd);
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   return fd;
@@ -259,7 +259,7 @@ int8_t dns_resolver(struct sockaddr_in *dest_addr) {
 
   if (getaddrinfo(hostname, NULL, &info, &result) != 0) {
     fprintf(stderr, "[ERROR][ft_ping]: %s: No address associated with hostname\n", hostname);
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   *dest_addr = *(struct sockaddr_in *)result->ai_addr;
@@ -267,7 +267,7 @@ int8_t dns_resolver(struct sockaddr_in *dest_addr) {
 
   if (inet_ntop(AF_INET, &dest_addr->sin_addr, ipname, INET_ADDRSTRLEN) == NULL) {
     perror("[ERROR][inet_ntop]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   return 0;
@@ -294,7 +294,7 @@ int8_t send_pkt(const socket_t fd, struct sockaddr_in *dest_addr) {
   uint8_t *pkt = malloc(size_pkt * sizeof(char));
   if (pkt == NULL) {
     perror("[ERROR][malloc]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   memset(pkt, 0, size_pkt);
@@ -309,7 +309,7 @@ int8_t send_pkt(const socket_t fd, struct sockaddr_in *dest_addr) {
   if (sendto(fd, pkt, size_pkt, 0, (struct sockaddr *)dest_addr, sizeof(struct sockaddr_in)) == -1) {
     perror("[ERROR][sendto]");
     free(pkt);
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   free(pkt);
@@ -330,7 +330,7 @@ int8_t handle_icmp_hdr() {
   }
 
   if (recv_pid != getpid())
-    return IGNORE_ERR;
+    return ERR_IGNORE;
 
   if (icmp.type == ICMP_ECHOREPLY) {
     recv_packet++;
@@ -353,9 +353,9 @@ int8_t recv_pkt(const socket_t fd) {
   int8_t n = select(fd + 1, &readfd, NULL, NULL, &timeout);
   if (n == -1) {
     if (errno == EINTR)
-      return IGNORE_ERR;
+      return ERR_IGNORE;
     perror("[ERROR][select]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   } else if (n == 0)
     return NO_RECV;
 
@@ -364,19 +364,19 @@ int8_t recv_pkt(const socket_t fd) {
   bytes_read = recvfrom(fd, buffer, RECV_BUFFER_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_size);
   if (bytes_read == -1) {
     if (errno == EINTR)
-      return IGNORE_ERR;
+      return ERR_IGNORE;
     else if (errno == EAGAIN || errno == EWOULDBLOCK)
       return NO_RECV;
     else
-      return FATAL_ERR;
+      return ERR_FATAL;
   }
 
-  if (handle_icmp_hdr() == IGNORE_ERR)
-    return IGNORE_ERR;
+  if (handle_icmp_hdr() == ERR_IGNORE)
+    return ERR_IGNORE;
 
   if (inet_ntop(AF_INET, &recv_addr.sin_addr, ipname, INET_ADDRSTRLEN) == NULL) {
     perror("[ERROR][inet_ntop]");
-    return FATAL_ERR;
+    return ERR_FATAL;
   }
 
   return VALID_RECV;
@@ -402,8 +402,8 @@ int8_t ft_ping(const socket_t fd, struct sockaddr_in *dest_addr) {
 
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    if (send_pkt(fd, dest_addr) == FATAL_ERR)
-      return FATAL_ERR;
+    if (send_pkt(fd, dest_addr) == ERR_FATAL)
+      return ERR_FATAL;
 
     switch (recv_pkt(fd)) {
     case VALID_RECV:
@@ -412,9 +412,9 @@ int8_t ft_ping(const socket_t fd, struct sockaddr_in *dest_addr) {
       update_rtt(latency);
       print_body(latency);
       break;
-    case FATAL_ERR:
-      return FATAL_ERR;
-    case IGNORE_ERR:
+    case ERR_FATAL:
+      return ERR_FATAL;
+    case ERR_IGNORE:
       continue;
     }
     if (opt.count && (size_t)opt.count_arg == send_packet)

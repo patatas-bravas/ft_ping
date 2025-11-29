@@ -14,9 +14,8 @@
 #define NO_RECV 0
 #define VALID_RECV 1
 
-#define FATAL_ERR -1
-#define IGNORE_ERR -2
-#define WARNING_ERR -3
+#define ERR_FATAL -1
+#define ERR_IGNORE -2
 
 
 typedef int socket_t;
