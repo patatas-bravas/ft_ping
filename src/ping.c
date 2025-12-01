@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include <math.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <netinet/ip_icmp.h>
 #include <signal.h>
 #include <stdint.h>
@@ -196,8 +197,8 @@ void print_body(const float time) {
 
     printf("Vr HL TOS  Len   ID Flg  off TTL Pro  cks      Src	Dst	Data\n");
 
-    uint16_t frag_off = ip_err.frag_off;
-    uint8_t flags = (frag_off >> 13) & 0x7;
+    uint16_t frag_off = ntohs(ip_err.frag_off);
+    uint8_t flags = (frag_off >> 13) & 0b1111111;
     uint16_t offset = frag_off & 0x1FFF;
 
     printf(" %d  %d  %02x %04x %04x   %d %04x  %02x  %02x %04x %s  %s\n", ip_err.version, ip_err.ihl, ip_err.tos,
@@ -344,7 +345,7 @@ int8_t handle_icmp_hdr() {
 int8_t recv_pkt(const socket_t fd) {
   struct timeval timeout;
   timeout.tv_sec = 3.0;
-  timeout.tv_usec = 500;
+  timeout.tv_usec = 0.0;
 
   fd_set readfd;
   FD_ZERO(&readfd);
