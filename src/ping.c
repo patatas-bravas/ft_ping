@@ -4,15 +4,12 @@
 #include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <netinet/ip_icmp.h>
 #include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <time.h>
 
 #include "ping.h"
@@ -107,9 +104,11 @@ int8_t handle_opt(int argc, char **argv) {
         return ERR_FATAL;
       }
       break;
+
     case 'q':
       opt.quiet = 1;
       break;
+
     case 'h':
     case '?':
       printf("Usage: ft_ping [OPTION...] HOST \n");
@@ -129,7 +128,7 @@ int8_t handle_opt(int argc, char **argv) {
     }
   }
 
-  int remaining_arg = 0;
+  size_t remaining_arg = 0;
   for (int i = optind; i < argc; i++) {
     remaining_arg++;
   }
@@ -183,7 +182,7 @@ void print_body(const float time) {
 
     unsigned char *ip_bytes = (unsigned char *)&(ip_err);
     printf("IP Hdr Dump:\n ");
-    for (int i = 0; i < IP_HEADER_SIZE; i++) {
+    for (size_t i = 0; i < IP_HEADER_SIZE; i++) {
       printf("%02x", ip_bytes[i]);
       if (i % 2 == 1)
         printf(" ");
@@ -220,19 +219,19 @@ void print_footer() {
   printf("--- %s ping statistics ---\n", hostname);
   printf("%ld packets transmitted, %ld packets received, %d%% packet loss\n", send_packet, recv_packet, percentage);
 
-  double min = rtt.min;
-  double max = rtt.max;
-  double average = rtt.average;
-  double stddev = rtt.stddev;
   if (!err)
-    printf("round-trip min/avg/max/stddev = %.3lf/%.3lf/%.3lf/%.3lf ms\n", min, average, max, stddev);
+    printf("round-trip min/avg/max/stddev = %.3lf/%.3lf/%.3lf/%.3lf ms\n", rtt.min, rtt.average, rtt.max, rtt.stddev);
 }
 
 socket_t init_icmp_socket() {
 
   socket_t fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-  if (fd < 0) {
-    perror("[ERROR][socket]");
+  if (fd == -1) {
+    if (errno == EPERM) {
+      fprintf(stderr, "[WARNING][ft_ping]: requires root privileges\n");
+    } else {
+      perror("[ERROR][socket]");
+    }
     return ERR_FATAL;
   }
 
@@ -258,7 +257,7 @@ int8_t dns_resolver(struct sockaddr_in *dest_addr) {
   memset(&info, 0, sizeof info);
   info.ai_family = AF_INET;
 
-  if (getaddrinfo(hostname, NULL, &info, &result) != 0) {
+  if (getaddrinfo(hostname, NULL, &info, &result)) {
     fprintf(stderr, "[ERROR][ft_ping]: %s: No address associated with hostname\n", hostname);
     return ERR_FATAL;
   }
@@ -291,28 +290,27 @@ uint16_t checksum(const void *addr, size_t size) {
 
 int8_t send_pkt(const socket_t fd, struct sockaddr_in *dest_addr) {
 
-  size_t size_pkt = opt.size + ICMP_HEADER_SIZE;
-  uint8_t *pkt = malloc(size_pkt * sizeof(char));
+  size_t pkt_size = opt.size + ICMP_HEADER_SIZE;
+  uint8_t *pkt = malloc(pkt_size * sizeof(char));
   if (pkt == NULL) {
     perror("[ERROR][malloc]");
     return ERR_FATAL;
   }
 
-  memset(pkt, 0, size_pkt);
+  memset(pkt, 0, pkt_size);
   struct icmphdr *hdr = (struct icmphdr *)pkt;
   char *payload = (char *)pkt + ICMP_HEADER_SIZE;
   memset(payload, 'M', opt.size);
   hdr->type = ICMP_ECHO;
   hdr->un.echo.id = getpid();
   hdr->un.echo.sequence = send_packet++;
-  hdr->checksum = checksum(pkt, size_pkt);
+  hdr->checksum = checksum(pkt, pkt_size);
 
-  if (sendto(fd, pkt, size_pkt, 0, (struct sockaddr *)dest_addr, sizeof(struct sockaddr_in)) == -1) {
+  if (sendto(fd, pkt, pkt_size, 0, (struct sockaddr *)dest_addr, sizeof(struct sockaddr_in)) == -1) {
     perror("[ERROR][sendto]");
     free(pkt);
     return ERR_FATAL;
   }
-
   free(pkt);
   return 0;
 }
@@ -343,31 +341,27 @@ int8_t handle_icmp_hdr() {
 }
 
 int8_t recv_pkt(const socket_t fd) {
-  struct timeval timeout;
-  timeout.tv_sec = 3.0;
-  timeout.tv_usec = 0.0;
+  struct timeval timeout = {.tv_sec = 3, .tv_usec = 0};
 
   fd_set readfd;
   FD_ZERO(&readfd);
   FD_SET(fd, &readfd);
 
-  int8_t n = select(fd + 1, &readfd, NULL, NULL, &timeout);
-  if (n == -1) {
+  int8_t nfd = select(fd + 1, &readfd, NULL, NULL, &timeout);
+  if (nfd == -1) {
     if (errno == EINTR)
       return ERR_IGNORE;
     perror("[ERROR][select]");
     return ERR_FATAL;
-  } else if (n == 0)
+  } else if (nfd == 0)
     return NO_RECV;
 
-  struct sockaddr_in recv_addr;
+  struct sockaddr_in recv_addr = {0};
   socklen_t recv_addr_size = sizeof(struct sockaddr_in);
   bytes_read = recvfrom(fd, buffer, RECV_BUFFER_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_size);
   if (bytes_read == -1) {
     if (errno == EINTR)
       return ERR_IGNORE;
-    else if (errno == EAGAIN || errno == EWOULDBLOCK)
-      return NO_RECV;
     else
       return ERR_FATAL;
   }
@@ -389,8 +383,8 @@ void sigint_handler(int code) {
 }
 
 int8_t ft_ping(const socket_t fd, struct sockaddr_in *dest_addr) {
+  struct timespec start = {0}, end = {0}, interval = {0};
 
-  struct timespec start, end, interval;
   if (opt.interval)
     interval.tv_sec = (time_t)opt.interval_arg;
   else
@@ -398,13 +392,21 @@ int8_t ft_ping(const socket_t fd, struct sockaddr_in *dest_addr) {
   interval.tv_nsec = 0;
 
   signal(SIGINT, sigint_handler);
+
+  buffer = malloc(RECV_BUFFER_SIZE);
+  if (buffer == NULL) {
+    perror("[ERROR][malloc]");
+    return ERR_FATAL;
+  }
+
   print_header();
   while (run) {
-
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    if (send_pkt(fd, dest_addr) == ERR_FATAL)
+    if (send_pkt(fd, dest_addr) == ERR_FATAL) {
+      free(buffer);
       return ERR_FATAL;
+    }
 
     switch (recv_pkt(fd)) {
     case VALID_RECV:
@@ -413,15 +415,20 @@ int8_t ft_ping(const socket_t fd, struct sockaddr_in *dest_addr) {
       update_rtt(latency);
       print_body(latency);
       break;
-    case ERR_FATAL:
+    case ERR_FATAL: {
+      free(buffer);
       return ERR_FATAL;
+    }
     case ERR_IGNORE:
       continue;
     }
+
     if (opt.count && (size_t)opt.count_arg == send_packet)
       break;
     nanosleep(&interval, NULL);
   }
+
   print_footer();
+  free(buffer);
   return 0;
 }

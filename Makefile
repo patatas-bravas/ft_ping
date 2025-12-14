@@ -1,6 +1,6 @@
 NAME = ft_ping
-CC = cc 
-CFLAGS = -O2 -Wall -Wextra -Werror -I$(DIR_INCLUDE)
+CC = gcc
+CFLAGS = -O2 -Wall -Wextra -Werror -pedantic -std=gnu23 -I$(DIR_INCLUDE)
 LDFLAGS = -lm -O2
 
 DIR_INCLUDE = include

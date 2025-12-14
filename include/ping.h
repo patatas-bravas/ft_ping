@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 #define TTL_UNIX_SIZE 64
-#define IP_HEADER_SIZE 20
+#define IP_HEADER_SIZE sizeof(struct iphdr)
 #define ICMP_HEADER_SIZE sizeof(struct icmphdr)
 #define ICMP_PAYLOAD_SIZE 56
 #define ICMP_PKT_SIZE (IP_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_PAYLOAD_SIZE)
@@ -16,7 +16,6 @@
 
 #define ERR_FATAL -1
 #define ERR_IGNORE -2
-
 
 typedef int socket_t;
 
